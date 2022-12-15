@@ -16,12 +16,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { DataStore } from "@api/index";
 import { Settings } from "@api/settings";
 import { VENCORD_USER_AGENT } from "@utils/constants";
 import { debounce } from "@utils/debounce";
 
 import { PronounsFormat } from ".";
 import { PronounCode, PronounMapping, PronounsResponse } from "./types";
+
+const CUSTOM_PRONOUNS_KEY = "PronounDB-CustomPronouns";
 
 // A map of cached pronouns so the same request isn't sent twice
 const cache: Record<string, PronounCode> = {};
@@ -42,15 +45,19 @@ const bulkFetch = debounce(async () => {
 // Fetches the pronouns for one id, returning a promise that resolves if it was cached, or once the request is completed
 export function fetchPronouns(id: string): Promise<PronounCode> {
     return new Promise(res => {
-        // If cached, return the cached pronouns
-        if (id in cache) res(cache[id]);
-        // If there is already a request added, then just add this callback to it
-        else if (id in requestQueue) requestQueue[id].push(res);
-        // If not already added, then add it and call the debounced function to make sure the request gets executed
-        else {
-            requestQueue[id] = [res];
-            bulkFetch();
-        }
+        getCustomPronouns(id).then(custom => {
+            // If custom pronouns set, use those
+            if (custom) res(custom);
+            // If cached, return the cached pronouns
+            else if (id in cache) res(cache[id]);
+            // If there is already a request added, then just add this callback to it
+            else if (id in requestQueue) requestQueue[id].push(res);
+            // If not already added, then add it and call the debounced function to make sure the request gets executed
+            else {
+                requestQueue[id] = [res];
+                bulkFetch();
+            }
+        });
     });
 }
 
@@ -92,4 +99,14 @@ export function formatPronouns(pronouns: PronounCode): string {
     ) return PronounMapping[pronouns];
     // Otherwise (lowercase and not a special code), then convert the mapping to lowercase
     else return PronounMapping[pronouns].toLowerCase();
+}
+
+async function getCustomPronouns(userId: string) {
+    const data = await DataStore.get(CUSTOM_PRONOUNS_KEY) ?? {};
+    return data[userId];
+}
+
+export async function saveCustomPronouns(userId: string, pronouns: PronounCode) {
+    const data = await DataStore.get(CUSTOM_PRONOUNS_KEY) ?? {};
+    await DataStore.set(CUSTOM_PRONOUNS_KEY, { ...data, [userId]: pronouns });
 }

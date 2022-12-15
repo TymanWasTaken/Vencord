@@ -22,6 +22,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import PronounsAboutComponent from "./components/PronounsAboutComponent";
 import PronounsChatComponent from "./components/PronounsChatComponent";
 import PronounsProfileWrapper from "./components/PronounsProfileWrapper";
+import UserContextMenuWrapper from "./components/UserContextMenuWrapper";
 
 export enum PronounsFormat {
     Lowercase = "LOWERCASE",
@@ -63,6 +64,14 @@ export default definePlugin({
                 match: "!1", // false
                 replace: "!0"
             }
+        },
+        // Patch user context menu
+        {
+            find: ".Messages.STAGE_CHANNEL_USER_MOVE_TO_AUDIENCE",
+            replacement: {
+                match: /return(\(0,\w\.jsxs?\)\(.+?\}\)\]\}\))(?=\}\),\{object:)/,
+                replace: (_, component) => `return Vencord.Plugins.plugins.PronounDB.UserContextMenuWrapper(e, ${component})`
+            }
         }
     ],
 
@@ -91,5 +100,6 @@ export default definePlugin({
     settingsAboutComponent: PronounsAboutComponent,
     // Re-export the components on the plugin object so it is easily accessible in patches
     PronounsChatComponent,
-    PronounsProfileWrapper
+    PronounsProfileWrapper,
+    UserContextMenuWrapper
 });
