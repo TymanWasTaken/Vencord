@@ -18,22 +18,50 @@
 
 import "./styles.css";
 
+import { addContextMenuPatch, findGroupChildrenByChildId, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
 import { Devs } from "@utils/constants";
+import { openModal } from "@utils/modal";
 import definePlugin, { OptionType } from "@utils/types";
+import { Menu, React } from "@webpack/common";
 
 import PronounsAboutComponent from "./components/PronounsAboutComponent";
 import { CompactPronounsChatComponentWrapper, PronounsChatComponentWrapper } from "./components/PronounsChatComponent";
 import PronounsProfileWrapper from "./components/PronounsProfileWrapper";
+import SetPronounsModal from "./components/SetPronounsModal";
+import { fetchPronouns } from "./pronoundbUtils";
 
 export enum PronounsFormat {
     Lowercase = "LOWERCASE",
     Capitalized = "CAPITALIZED"
 }
 
+const seen = new WeakSet();
+const userContextMenuPatch: NavContextMenuPatchCallback = (children, props) => {
+    if (seen.has(children)) return;
+    seen.add(children);
+
+    if (!props) return;
+    const group = findGroupChildrenByChildId("user-profile", children);
+    if (group && !group.some(child => child?.props?.id === "set-user-pronouns")) {
+        group.push((
+            <Menu.MenuItem
+                label="Set User Pronouns"
+                key="set-user-pronouns"
+                id="set-user-pronouns"
+                action={async () => {
+                    const pronouns = await fetchPronouns(props.user.id);
+                    openModal(modalProps => <SetPronounsModal {...modalProps} defaultPronouns={pronouns} userId={props.user.id} />);
+                }}
+            />
+        ));
+    }
+};
+
 export default definePlugin({
     name: "PronounDB",
     authors: [Devs.Tyman, Devs.TheKodeToad],
     description: "Adds pronouns to user messages using pronoundb",
+    dependencies: ["ContextMenuAPI"],
     patches: [
         // Add next to username (compact mode)
         {
@@ -102,6 +130,14 @@ export default definePlugin({
         }
     },
     settingsAboutComponent: PronounsAboutComponent,
+
+    start() {
+        addContextMenuPatch("user-context", userContextMenuPatch);
+    },
+    stop() {
+        removeContextMenuPatch("user-context", userContextMenuPatch);
+    },
+
     // Re-export the components on the plugin object so it is easily accessible in patches
     PronounsChatComponentWrapper,
     CompactPronounsChatComponentWrapper,

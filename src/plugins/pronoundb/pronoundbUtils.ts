@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { DataStore } from "@api/index";
 import { Settings } from "@api/settings";
 import { VENCORD_USER_AGENT } from "@utils/constants";
 import { debounce } from "@utils/debounce";
@@ -58,6 +59,13 @@ export function getCachedPronouns(id: string): PronounCode | null {
     return cache[id] ?? null;
 }
 
+// Sets the cached pronouns, this is used to update pronoun overrides
+export function setCachedPronouns(pronounMap: Record<string, PronounCode | undefined>) {
+    for (const [id, pronouns] of Object.entries(pronounMap)) {
+        pronouns === undefined ? delete cache[id] : cache[id] = pronouns;
+    }
+}
+
 // Fetches the pronouns for one id, returning a promise that resolves if it was cached, or once the request is completed
 export function fetchPronouns(id: string): Promise<PronounCode> {
     return new Promise(res => {
@@ -74,11 +82,20 @@ export function fetchPronouns(id: string): Promise<PronounCode> {
 }
 
 async function bulkFetchPronouns(ids: string[]): Promise<PronounsResponse> {
+    const pronounMap: Record<string, PronounCode> = {};
+
+    // Check if any ids have local overrides first, then remove them from the array
+    const overrides = await DataStore.get<Record<string, PronounCode>>("pronoundb-overrides");
+    Object.assign(pronounMap, overrides);
+    ids = ids.filter(id => overrides?.[id] === undefined);
+
+    // Construct query string for pronoundb API
     const params = new URLSearchParams();
     params.append("platform", "discord");
     params.append("ids", ids.join(","));
 
     try {
+        // Fetch pronoundb API
         const req = await fetch("https://pronoundb.org/api/v1/lookup-bulk?" + params.toString(), {
             method: "GET",
             headers: {
@@ -86,11 +103,13 @@ async function bulkFetchPronouns(ids: string[]): Promise<PronounsResponse> {
                 "X-PronounDB-Source": VENCORD_USER_AGENT
             }
         });
-        return await req.json()
-            .then((res: PronounsResponse) => {
-                Object.assign(cache, res);
-                return res;
-            });
+        // Parse response as JSON and add to the map to return
+        const res: PronounsResponse = await req.json();
+        Object.assign(pronounMap, res);
+        // Store all fetched pronouns into the cache
+        Object.assign(cache, pronounMap);
+
+        return pronounMap;
     } catch (e) {
         // If the request errors, treat it as if no pronouns were found for all ids, and log it
         console.error("PronounDB fetching failed: ", e);
